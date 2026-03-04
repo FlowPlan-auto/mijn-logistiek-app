@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import pandas as pd
 import folium
@@ -126,7 +125,6 @@ if st.sidebar.button("🚀 Bereken Optimale Route"):
         st.warning("Voer eerst adressen in de zijbalk in.")
 else:
     st.info("👋 Welkom! Voer links de adressen in en klik op de knop om de meest efficiënte route te zien.")
-
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Route Expert Pro v1.0 - Gebouwd voor de houthandel sector.")
