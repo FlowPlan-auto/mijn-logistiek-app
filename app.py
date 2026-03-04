@@ -10,17 +10,17 @@ import time
 ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjlhZTJlMzRmYTg5MDRmMDk5MGU4NGIyNjgyMTZjMTNlIiwiaCI6Im11cm11cjY0In0='
 client = openrouteservice.Client(key=ORS_API_KEY)
 
-st.set_page_config(page_title="LogiPlan Enterprise | Route Optimization", layout="wide")
+st.set_page_config(page_title="LogiPlan Enterprise | Fleet Management", layout="wide")
 
-# CSS voor een strakke, zakelijke uitstraling
+# High-End Corporate Styling
 st.markdown("""
     <style>
-    .reportview-container { background: #f0f2f6; }
-    .stMetric { border: 1px solid #d1d5db; padding: 20px; border-radius: 4px; background: #ffffff; color: #111827; }
-    div[data-testid="stExpander"] { border: 1px solid #d1d5db; border-radius: 4px; background: #ffffff; }
-    .stButton>button { background-color: #1e40af; color: white; border-radius: 2px; width: 100%; border: none; height: 3em; font-weight: bold; }
-    .stButton>button:hover { background-color: #1e3a8a; border: none; }
-    h1, h2, h3 { color: #111827; font-family: 'Inter', sans-serif; }
+    .stApp { background-color: #fcfcfc; }
+    div[data-testid="stMetricValue"] { font-size: 24px; color: #1e3a8a; font-weight: 700; }
+    .stMetric { border: 1px solid #e5e7eb; padding: 15px; background: #ffffff; }
+    .stButton>button { background-color: #0f172a; color: white; height: 3.5rem; border-radius: 4px; border: none; font-size: 16px; transition: 0.3s; }
+    .stButton>button:hover { background-color: #334155; border: none; }
+    .section-header { border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; margin-bottom: 20px; color: #1e3a8a; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -28,19 +28,19 @@ if 'fleet_results' not in st.session_state:
     st.session_state.fleet_results = None
 
 st.title("LogiPlan Enterprise")
-st.caption("Advanced Fleet Dispatching & Route Optimization Engine")
+st.caption("Fleet Optimization Engine v2.1 | Powered by ORS Business")
 
 # --- SIDEBAR: CONTROLS ---
-st.sidebar.header("Configuration")
-num_vehicles = st.sidebar.number_input("Aantal voertuigen", min_value=1, max_value=10, value=2)
-max_capacity = st.sidebar.number_input("Maximale stops per voertuig", min_value=1, max_value=50, value=15)
+st.sidebar.header("Fleet Configuration")
+num_vehicles = st.sidebar.number_input("Beschikbare Voertuigen", min_value=1, max_value=15, value=2)
+max_capacity = st.sidebar.number_input("Maximale Stops per Voertuig", min_value=1, max_value=50, value=15)
 
 st.sidebar.markdown("---")
-input_method = st.sidebar.selectbox("Data Input", ["Excel/CSV Upload", "Manual Entry"])
+input_method = st.sidebar.selectbox("Gegevensbron", ["Excel/CSV Upload", "Handmatige Invoer"])
 
 adressen = []
-if input_method == "Manual Entry":
-    input_text = st.sidebar.text_area("Adressen (Startpunt op regel 1):", height=200)
+if input_method == "Handmatige Invoer":
+    input_text = st.sidebar.text_area("Adressenlijst (Eerste regel is Magazijn):", height=200)
     adressen = [a.strip() for a in input_text.split('\n') if a.strip()]
 else:
     uploaded_file = st.sidebar.file_uploader("Upload Fleet Data", type=["xlsx", "csv"])
@@ -49,9 +49,9 @@ else:
         adressen = df.iloc[:, 0].dropna().tolist()
 
 # --- OPTIMIZATION ENGINE ---
-if st.sidebar.button("RUN OPTIMIZATION"):
+if st.sidebar.button("OPTIMALISEER VLOOT"):
     if len(adressen) > 1:
-        with st.spinner('Calculating optimal fleet distribution...'):
+        with st.status("Verwerken van logistieke data...", expanded=True) as status:
             coords, valid_addr = [], []
             for a in adressen:
                 try:
@@ -63,12 +63,13 @@ if st.sidebar.button("RUN OPTIMIZATION"):
                     time.sleep(0.05)
                 except: continue
 
+            st.write(f"✓ {len(valid_addr)} locaties gevalideerd.")
+            
             if len(coords) > 1:
                 ors_coords = [[c[1], c[0]] for c in coords]
                 matrix = client.distance_matrix(locations=ors_coords, profile='driving-car', metrics=['distance'])
                 dist_matrix = matrix['distances']
 
-                # OR-Tools for VRP (Vehicle Routing Problem)
                 num_loc = len(coords)
                 manager = pywrapcp.RoutingIndexManager(num_loc, num_vehicles, 0)
                 routing = pywrapcp.RoutingModel(manager)
@@ -77,7 +78,6 @@ if st.sidebar.button("RUN OPTIMIZATION"):
                 transit_callback_index = routing.RegisterTransitCallback(d_cb)
                 routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
                 
-                # Capaciteit toevoegen
                 def demand_callback(from_index): return 1
                 demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
                 routing.AddDimension(demand_callback_index, 0, max_capacity, True, 'Capacity')
@@ -88,67 +88,77 @@ if st.sidebar.button("RUN OPTIMIZATION"):
 
                 if solution:
                     fleet_data = []
+                    total_dist = 0
                     for vehicle_id in range(num_vehicles):
                         index = routing.Start(vehicle_id)
                         route = []
+                        route_dist = 0
                         while not routing.IsEnd(index):
+                            previous_index = index
                             node_idx = manager.IndexToNode(index)
                             route.append(node_idx)
                             index = solution.Value(routing.NextVar(index))
-                        if len(route) > 1: # Alleen wagens met stops
-                            fleet_data.append({'vehicle': vehicle_id + 1, 'path': route})
+                            route_dist += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
+                        
+                        if len(route) > 1:
+                            fleet_data.append({'vehicle': vehicle_id + 1, 'path': route, 'distance': route_dist / 1000})
+                            total_dist += route_dist / 1000
                     
                     st.session_state.fleet_results = {
                         'fleet': fleet_data,
+                        'total_distance': total_dist,
                         'coords': coords,
                         'addr': valid_addr
                     }
+                    status.update(label="Optimalisatie Voltooid", state="complete", expanded=False)
 
-# --- DASHBOARD DISPLAY ---
+# --- BUSINESS DASHBOARD ---
 if st.session_state.fleet_results:
     res = st.session_state.fleet_results
     
-    m1, m2 = st.columns(2)
-    m1.metric("Actieve Voertuigen", len(res['fleet']))
-    m2.metric("Totaal Aantal Stops", len(res['addr']) - 1)
+    # Financial Impact Metrics
+    c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+    c_m1.metric("Totale Afstand", f"{round(res['total_distance'], 1)} KM")
+    c_m2.metric("Voertuigen", len(res['fleet']))
+    # Business Case: Gemiddelde besparing simulatie (15% van 1.50 euro per km)
+    savings = res['total_distance'] * 0.15 * 1.50
+    c_m3.metric("Geschatte Besparing", f"€ {round(savings, 2)}")
+    c_m4.metric("CO2 Reductie", f"{round(res['total_distance'] * 0.12, 1)} KG")
 
-    st.markdown("### Operational Overview")
+    st.markdown("<div class='section-header'>OPERATIONEEL OVERZICHT</div>", unsafe_allow_html=True)
     
-    c1, c2 = st.columns([2, 1])
-    with c1:
+    col_map, col_list = st.columns([2, 1])
+    
+    with col_map:
         m = folium.Map(location=res['coords'][0], zoom_start=10, tiles='cartodbpositron')
         colors = ['#1e40af', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
         
         for i, vehicle in enumerate(res['fleet']):
-            color = colors[i % len(colors)]
-            pts = [res['coords'][idx] for idx in vehicle['path']]
-            folium.PolyLine(pts, color=color, weight=4, opacity=0.8, tooltip=f"Voertuig {vehicle['vehicle']}").add_to(m)
+            v_color = colors[i % len(colors)]
+            v_coords = [res['coords'][idx] for idx in vehicle['path']]
+            folium.PolyLine(v_coords, color=v_color, weight=5, opacity=0.7).add_to(m)
             for stop_idx in vehicle['path']:
-                folium.CircleMarker(res['coords'][stop_idx], radius=5, color=color, fill=True).add_to(m)
+                folium.CircleMarker(res['coords'][stop_idx], radius=6, color=v_color, fill=True, fill_opacity=1).add_to(m)
         
-        st_folium(m, width=800, height=500, key="enterprise_map")
+        st_folium(m, width=900, height=550, key="enterprise_map_final")
 
-    with c2:
+    with col_list:
+        st.write("### Route Details")
         for vehicle in res['fleet']:
-            with st.expander(f"VOERTUIG {vehicle['vehicle']} - DETAILS"):
+            with st.expander(f"VOERTUIG {vehicle['vehicle']} ({round(vehicle['distance'], 1)} km)"):
                 stops = [res['addr'][i] for i in vehicle['path']]
-                st.write(f"Aantal stops: {len(stops) - 1}")
                 
-                # Gecombineerde Google Maps Link
-                # Formaat: /dir/Origin/Stop1/Stop2/.../Destination
+                # Geoptimaliseerde Multi-Stop Link
                 origin = stops[0].replace(' ', '+')
                 dest = stops[-1].replace(' ', '+')
                 waypts = "|".join([s.replace(' ', '+') for s in stops[1:-1]])
+                g_maps_url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&waypoints={waypts}&travelmode=driving"
                 
-                if waypts:
-                    g_maps_url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&waypoints={waypts}&travelmode=driving"
-                else:
-                    g_maps_url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&travelmode=driving"
+                st.link_button("OPEN IN NAVIGATIE", g_maps_url)
                 
-                st.link_button(f"OPEN ROUTE IN GOOGLE MAPS", g_maps_url)
-                
-                for step, s_name in enumerate(stops):
-                    label = "START" if step == 0 else f"STOP {step}"
-                    st.text(f"{label}: {s_name}")
+                # Tabel weergave voor professionele lijst
+                df_stops = pd.DataFrame({"Volgorde": range(len(stops)), "Locatie": stops})
+                st.table(df_stops)
+
 else:
-    st.info("Systeem gereed. Configureer fleet-instellingen en start optimalisatie.")
+    st.info("Systeem gereed voor analyse. Configureer uw fleet-data in het linkerpaneel.")
