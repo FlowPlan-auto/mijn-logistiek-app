@@ -2,7 +2,7 @@ streamlit
 pandas
 folium
 streamlit-folium
-geopy
+openrouteservice
 ortools
 numpy
 openpyxl
