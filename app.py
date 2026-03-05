@@ -21,7 +21,7 @@ def check_hashes(password, hashed_text):
     return make_hashes(password) == hashed_text
 
 if 'user_db' not in st.session_state:
-    st.session_state.user_db = {"admin": make_hashes("demo2024")} # Standaard demo account
+    st.session_state.user_db = {"admin": make_hashes("demo2024")} 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'fleet_results' not in st.session_state:
@@ -63,7 +63,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- SCENARIO A: INLOGSCHERM ---
+# --- INLOGSCHERM ---
 if not st.session_state.logged_in:
     st.markdown("<div style='text-align: center; margin-top: 50px;'>", unsafe_allow_html=True)
     st.title("LogiPlan Enterprise")
@@ -93,11 +93,11 @@ if not st.session_state.logged_in:
                 st.session_state.user_db[new_u] = make_hashes(new_p)
                 st.success("Account aangemaakt! U kunt nu inloggen.")
             else:
-                st.error("Wachtwoorden komen niet overeen.")
+                st.error("Wachtwoorden komen niet overeen of gebruikersnaam is leeg.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- SCENARIO B: HET DASHBOARD (NA LOGIN) ---
+# --- DASHBOARD (NA LOGIN) ---
 else:
     st.markdown(f"""
         <div class="nav-bar">
@@ -126,7 +126,11 @@ else:
                 adressen = [a.strip() for a in txt.split('\n') if a.strip()]
             else:
                 up = st.file_uploader("Drop fleet manifest (.xlsx, .csv)", type=["xlsx", "csv"])
-                adressen = pd.read_excel(up).iloc[:, 0].dropna().tolist() if up and up.name.endswith('xlsx') else (pd.read_csv(up).iloc[:, 0].dropna().tolist() if up else [])
+                if up:
+                    df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
+                    adressen = df.iloc[:, 0].dropna().tolist()
+                else:
+                    adressen = []
 
         with col_action:
             st.write("")
@@ -173,7 +177,7 @@ else:
                                 st.session_state.fleet_results = {'fleet': fleet_data, 'total_distance': total_dist, 'coords': coords, 'addr': valid_addr, 'cost': cost_per_km, 'eff': est_efficiency}
                                 status.update(label="Analyse Succesvol", state="complete")
 
-    # --- DASHBOARD OUTPUT ---
+    # --- OUTPUT SECTIE ---
     if st.session_state.fleet_results:
         res = st.session_state.fleet_results
         st.markdown("### 2. Operational & Financial Impact")
@@ -199,14 +203,28 @@ else:
                 folium.PolyLine(pts, color=v_color, weight=5, opacity=0.8).add_to(m)
                 for s_idx in v['path']:
                     folium.CircleMarker(res['coords'][s_idx], radius=6, color=v_color, fill=True).add_to(m)
-            st_folium(m, width=900, height=550, key="enterprise_map_final")
+            st_folium(m, width=900, height=550, key="enterprise_map_segmented")
 
         with col_details:
             st.write("#### Dispatch Manifest")
             for v in res['fleet']:
                 with st.expander(f"UNIT {v['vehicle']} - {round(v['distance'], 1)} KM"):
                     v_addr = [res['addr'][i] for i in v['path']]
-                    orig, dest, way = v_addr[0].replace(' ','+'), v_addr[-1].replace(' ','+'), "|".join([s.replace(' ','+') for s in v_addr[1:-1]])
-                    url = f"https://www.google.com/maps/dir/?api=1&origin={orig}&destination={dest}&waypoints={way}&travelmode=driving"
-                    st.link_button("OPEN GOOGLE MAPS GPS", url)
+                    
+                    # --- GOOGLE MAPS SEGMENTATIE LOGICA ---
+                    MAX_STOPS = 10
+                    st.write(f"**Navigatie Links:**")
+                    
+                    for i in range(0, len(v_addr) - 1, MAX_STOPS - 1):
+                        segment = v_addr[i:i + MAX_STOPS]
+                        if len(segment) > 1:
+                            origin = segment[0].replace(' ', '+')
+                            dest = segment[-1].replace(' ', '+')
+                            waypts = "|".join([s.replace(' ', '+') for s in segment[1:-1]])
+                            
+                            url = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&waypoints={waypts}&travelmode=driving"
+                            
+                            deel_nr = (i // (MAX_STOPS - 1)) + 1
+                            st.link_button(f"🧭 DEEL {deel_nr} (Stop {i} - {min(i + MAX_STOPS - 1, len(v_addr)-1)})", url)
+                    
                     st.dataframe(pd.DataFrame({"Stop": range(len(v_addr)), "Adres": v_addr}), hide_index=True)
